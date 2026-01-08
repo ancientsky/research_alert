@@ -2,11 +2,9 @@ name: Daily PubMed Scanner
 
 on:
   schedule:
-    # 每天 UTC 00:00 (台灣時間早上 08:00) 執行
-    - cron: '0 0 * * *'
-  workflow_dispatch: # 允許手動點擊按鈕測試
+    - cron: '0 0 * * *' # 每天 UTC 00:00 執行
+  workflow_dispatch:
 
-# 重要：給予 Action 推送程式碼的權限，否則無法更新 SQLite 資料庫
 permissions:
   contents: write
 
@@ -16,13 +14,13 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4  # 使用最新 v4
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5  # 使用最新 v5
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.12'  # 指定 Python 3.12
-          cache: 'pip' # 啟用快取以加速安裝
+          python-version: '3.12'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
@@ -30,9 +28,8 @@ jobs:
 
       - name: Run PubMed Scanner
         env:
-          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
-          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+          # 只保留必要的 API Key 和 Webhook
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           NCBI_EMAIL: ${{ secrets.NCBI_EMAIL }}
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -42,12 +39,11 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # 檢查是否有資料庫變更
           if [[ -n $(git status --porcelain papers.db) ]]; then
             git add papers.db
             git commit -m "Auto-update: processed papers database [skip ci]"
             git push
-            echo "Database updated successfully."
+            echo "Database updated."
           else
-            echo "No new papers found, database not changed."
+            echo "No changes."
           fi
