@@ -20,7 +20,7 @@ NCBI_API_KEY = os.getenv('NCBI_API_KEY')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 # 2. 搜尋關鍵字與參數
-KEYWORDS = "CRISPR AND Alzheimer"  # 請修改為您感興趣的關鍵字
+KEYWORDS = "artificial intelligence AND infectious disease"  # 請修改為您感興趣的關鍵字
 
 # 3. LLM 模型設定
 # 如果 Google AI Studio 中已有 'gemini-3.0-flash'，請直接將下方字串改為 'gemini-3.0-flash'
