@@ -1,0 +1,40 @@
+name: Daily PubMed Scanner
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # 每天 UTC 00:00 (台灣時間早上 08:00) 執行
+  workflow_dispatch: # 允許手動觸發測試
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install biopython google-generativeai
+
+      - name: Run scanner
+        env:
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+          NCBI_EMAIL: ${{ secrets.NCBI_EMAIL }}
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python pubmed_scanner.py
+
+      - name: Commit and push if database updated
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add papers.db
+          git commit -m "Update papers database [skip ci]" || echo "No changes to commit"
+          git push
