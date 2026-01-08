@@ -35,15 +35,26 @@ def init_db():
     return conn
 
 def search_pubmed(keywords):
-    """搜尋過去 1 天內的論文 PMID"""
+    """
+    搜尋過去 1 天內的論文 PMID
+    修改點：限制只回傳最新的 10 篇 (retmax=10, sort='date')
+    """
     try:
-        handle = Entrez.esearch(db="pubmed", term=keywords, reldate=1, datetype="pdat")
+        handle = Entrez.esearch(
+            db="pubmed", 
+            term=keywords, 
+            reldate=1, 
+            datetype="pdat", 
+            retmax=10,    # <--- 限制回傳最大數量為 10
+            sort='date'   # <--- 強制按日期排序，確保是「最新」的 10 篇
+        )
         record = Entrez.read(handle)
         handle.close()
         return record["IdList"]
     except Exception as e:
         print(f"PubMed 搜尋失敗: {e}")
         return []
+
 
 def fetch_details(pmid):
     """根據 PMID 獲取標題、摘要與 DOI"""
