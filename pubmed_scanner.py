@@ -1,29 +1,23 @@
 import os
 import sqlite3
 import datetime
-import smtplib
-from email.mime.text import MIMEText
-from email.header import Header
-
-# 第三方套件
+import time
+import requests # 新增：用於呼叫 Webhook
 from Bio import Entrez
 import google.generativeai as genai
 
 # --- 設定區 ---
 
-# 1. 讀取環境變數
-EMAIL_SENDER = os.getenv('EMAIL_SENDER')
-EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
-EMAIL_RECEIVER = os.getenv('EMAIL_RECEIVER')
+# 1. 讀取環境變數 (移除 Email 相關，新增 Webhook)
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 NCBI_EMAIL = os.getenv('NCBI_EMAIL')
 NCBI_API_KEY = os.getenv('NCBI_API_KEY')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-# 2. 搜尋關鍵字與參數
-KEYWORDS = "artificial intelligence AND infectious disease"  # 請修改為您感興趣的關鍵字
+# 2. 搜尋關鍵字
+KEYWORDS = "artificial intelligence AND infecious disease"
 
 # 3. LLM 模型設定
-# 如果 Google AI Studio 中已有 'gemini-3.0-flash'，請直接將下方字串改為 'gemini-3.0-flash'
 MODEL_NAME = 'gemini-3-flash-preview' 
 
 # --- 初始化 ---
@@ -33,7 +27,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel(MODEL_NAME)
 
 def init_db():
-    """初始化 SQLite 資料庫，若不存在則建立"""
+    """初始化 SQLite 資料庫"""
     conn = sqlite3.connect('papers.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS papers (pmid TEXT PRIMARY KEY)''')
@@ -64,9 +58,8 @@ def fetch_details(pmid):
         article = records['PubmedArticle'][0]['MedlineCitation']['Article']
         title = article['ArticleTitle']
         
-        # 處理摘要可能為列表的情況
         abstract_list = article.get('Abstract', {}).get('AbstractText', ["無摘要"])
-        abstract = "".join([str(x) for x in abstract_list]) # 確保轉為字串
+        abstract = "".join([str(x) for x in abstract_list])
         
         doi = ""
         for id_obj in records['PubmedArticle'][0]['PubmedData']['ArticleIdList']:
@@ -83,9 +76,9 @@ def summarize_ai(title, abstract):
     """使用 Gemini Flash 進行科普摘要"""
     prompt = (
         f"你是一位專業的科普作家。請閱讀以下醫學論文摘要，"
-        f"用繁體中文寫一段約 150 字的「科普摘要」。"
-        f"重點：1. 這項研究解決了什麼問題？ 2. 有什麼新發現？ 3. 對未來有什麼影響？"
-        f"請避免艱澀術語，讓一般大眾也能看懂。\n\n"
+        f"用繁體中文寫一段約 100-150 字的「科普摘要」。"
+        f"結構請包含：1. 背景與問題 2. 核心發現 3. 意義。"
+        f"請使用條列式或分段，使其在聊天軟體中易於閱讀。\n\n"
         f"標題：{title}\n"
         f"原始摘要：{abstract}"
     )
@@ -95,38 +88,41 @@ def summarize_ai(title, abstract):
     except Exception as e:
         return f"摘要生成失敗: {e}"
 
-def send_email(content):
-    """發送匯總郵件"""
-    if not content: return
+def send_chat_message(text):
+    """發送訊息到 Google Chat Webhook"""
+    if not WEBHOOK_URL:
+        print("錯誤：未設定 WEBHOOK_URL")
+        return
 
-    msg = MIMEText(content, 'plain', 'utf-8')
-    msg['Subject'] = Header(f"【每日論文速遞】{datetime.date.today()}", 'utf-8')
-    msg['From'] = EMAIL_SENDER
-    msg['To'] = EMAIL_RECEIVER
-
+    headers = {'Content-Type': 'application/json; charset=UTF-8'}
+    
+    # 建立 payload
+    data = {"text": text}
+    
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-            server.sendmail(EMAIL_SENDER, [EMAIL_RECEIVER], msg.as_string())
-        print("郵件發送成功！")
+        response = requests.post(WEBHOOK_URL, json=data, headers=headers)
+        if response.status_code != 200:
+            print(f"Webhook 發送失敗: {response.text}")
     except Exception as e:
-        print(f"郵件發送失敗: {e}")
+        print(f"Webhook 連線錯誤: {e}")
 
 def main():
-    print(f"開始執行 - 模型: {MODEL_NAME} - Python 3.12")
+    print(f"開始執行 - 模型: {MODEL_NAME}")
     conn = init_db()
     c = conn.cursor()
     
     pmids = search_pubmed(KEYWORDS)
-    print(f"找到 {len(pmids)} 篇相關論文 (含舊資料)")
+    print(f"找到 {len(pmids)} 篇相關論文")
     
-    new_papers_content = []
+    new_count = 0
+    
+    # 如果有新論文，先發送一個開頭訊息
+    # (為了避免洗版，這裡我們先計算未讀數量，若要即時發送可省略此步驟，直接進入迴圈)
     
     for pmid in pmids:
-        # 檢查是否已存在資料庫
         c.execute("SELECT pmid FROM papers WHERE pmid=?", (pmid,))
         if c.fetchone():
-            continue # 已處理過，跳過
+            continue 
             
         print(f"處理新論文: {pmid}")
         title, abstract, doi = fetch_details(pmid)
@@ -135,23 +131,28 @@ def main():
             summary = summarize_ai(title, abstract)
             link = f"https://doi.org/{doi}" if doi else f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
             
-            entry = (
-                f"📄 標題：{title}\n"
-                f"🔗 連結：{link}\n"
-                f"💡 科普摘要：\n{summary}\n"
-                f"{'-'*40}"
+            # 組合單篇論文訊息
+            message = (
+                f"📄 *{title}*\n"
+                f"{'-'*20}\n"
+                f"{summary}\n\n"
+                f"🔗 <{link}|點擊閱讀原文>" 
             )
-            new_papers_content.append(entry)
             
-            # 成功處理後才寫入 DB
+            send_chat_message(message)
+            new_count += 1
+            
+            # 寫入 DB
             c.execute("INSERT INTO papers VALUES (?)", (pmid,))
-            conn.commit() # 每次成功都存檔，避免中斷遺失
+            conn.commit()
+            
+            # 避免觸發 API 速率限制，稍作停頓
+            time.sleep(1) 
     
-    if new_papers_content:
-        full_report = "以下是您訂閱的最新論文科普摘要：\n\n" + "\n\n".join(new_papers_content)
-        send_email(full_report)
+    if new_count > 0:
+        send_chat_message(f"✅ 今日更新完畢，共推送 {new_count} 篇新論文。")
     else:
-        print("今日無新論文，未發送郵件。")
+        print("今日無新論文，未發送訊息。")
     
     conn.close()
 
