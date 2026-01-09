@@ -2,22 +2,21 @@ import os
 import sqlite3
 import datetime
 import time
-import requests # 新增：用於呼叫 Webhook
+import requests
 from Bio import Entrez
 import google.generativeai as genai
 
 # --- 設定區 ---
 
-# 1. 讀取環境變數 (移除 Email 相關，新增 Webhook)
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 NCBI_EMAIL = os.getenv('NCBI_EMAIL')
 NCBI_API_KEY = os.getenv('NCBI_API_KEY')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-# 2. 搜尋關鍵字
+# 搜尋關鍵字
 KEYWORDS = "Artificial Intelligence AND Epidemics"
 
-# 3. LLM 模型設定
+# LLM 模型
 MODEL_NAME = 'gemini-3-flash-preview' 
 
 # --- 初始化 ---
@@ -27,26 +26,52 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel(MODEL_NAME)
 
 def init_db():
-    """初始化 SQLite 資料庫"""
+    """
+    初始化 SQLite 資料庫
+    修改點：增加欄位檢測，若使用舊版 DB 會自動升級 Schema
+    """
     conn = sqlite3.connect('papers.db')
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS papers (pmid TEXT PRIMARY KEY)''')
+    
+    # 建立表格 (如果完全不存在)
+    c.execute('''CREATE TABLE IF NOT EXISTS papers 
+                 (pmid TEXT PRIMARY KEY, 
+                  title TEXT, 
+                  abstract TEXT, 
+                  summary TEXT, 
+                  processed_date TEXT)''')
+    
+    # --- 自動遷移邏輯 (針對舊版資料庫) ---
+    # 檢查目前有哪些欄位
+    c.execute("PRAGMA table_info(papers)")
+    existing_columns = [info[1] for info in c.fetchall()]
+    
+    # 如果缺欄位，就動態補上 (Migration)
+    new_columns = {
+        'title': 'TEXT',
+        'abstract': 'TEXT',
+        'summary': 'TEXT',
+        'processed_date': 'TEXT'
+    }
+    
+    for col_name, col_type in new_columns.items():
+        if col_name not in existing_columns:
+            print(f"資料庫升級：新增欄位 {col_name}")
+            c.execute(f"ALTER TABLE papers ADD COLUMN {col_name} {col_type}")
+            
     conn.commit()
     return conn
 
 def search_pubmed(keywords):
-    """
-    搜尋過去 1 天內的論文 PMID
-    修改點：限制只回傳最新的 10 篇 (retmax=10, sort='date')
-    """
+    """搜尋過去 1 天內的論文 (限制 10 篇最新)"""
     try:
         handle = Entrez.esearch(
             db="pubmed", 
             term=keywords, 
             reldate=1, 
             datetype="pdat", 
-            retmax=10,    # <--- 限制回傳最大數量為 10
-            sort='date'   # <--- 強制按日期排序，確保是「最新」的 10 篇
+            retmax=10, 
+            sort='date'
         )
         record = Entrez.read(handle)
         handle.close()
@@ -54,7 +79,6 @@ def search_pubmed(keywords):
     except Exception as e:
         print(f"PubMed 搜尋失敗: {e}")
         return []
-
 
 def fetch_details(pmid):
     """根據 PMID 獲取標題、摘要與 DOI"""
@@ -100,25 +124,19 @@ def summarize_ai(title, abstract):
         return f"摘要生成失敗: {e}"
 
 def send_chat_message(text):
-    """發送訊息到 Google Chat Webhook"""
     if not WEBHOOK_URL:
-        print("錯誤：未設定 WEBHOOK_URL")
         return
 
     headers = {'Content-Type': 'application/json; charset=UTF-8'}
-    
-    # 建立 payload
     data = {"text": text}
     
     try:
-        response = requests.post(WEBHOOK_URL, json=data, headers=headers)
-        if response.status_code != 200:
-            print(f"Webhook 發送失敗: {response.text}")
+        requests.post(WEBHOOK_URL, json=data, headers=headers)
     except Exception as e:
         print(f"Webhook 連線錯誤: {e}")
 
 def main():
-    print(f"開始執行 - 模型: {MODEL_NAME}")
+    print(f"開始執行 - 模型: {MODEL_NAME} (詳細存檔版)")
     conn = init_db()
     c = conn.cursor()
     
@@ -126,9 +144,7 @@ def main():
     print(f"找到 {len(pmids)} 篇相關論文")
     
     new_count = 0
-    
-    # 如果有新論文，先發送一個開頭訊息
-    # (為了避免洗版，這裡我們先計算未讀數量，若要即時發送可省略此步驟，直接進入迴圈)
+    today_str = datetime.date.today().isoformat() # 格式：YYYY-MM-DD
     
     for pmid in pmids:
         c.execute("SELECT pmid FROM papers WHERE pmid=?", (pmid,))
@@ -142,22 +158,28 @@ def main():
             summary = summarize_ai(title, abstract)
             link = f"https://doi.org/{doi}" if doi else f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
             
-            # 組合單篇論文訊息
+            # 1. 發送通知
             message = (
                 f"📄 *{title}*\n"
                 f"{'-'*20}\n"
                 f"{summary}\n\n"
                 f"🔗 <{link}|點擊閱讀原文>" 
             )
-            
             send_chat_message(message)
             new_count += 1
             
-            # 寫入 DB
-            c.execute("INSERT INTO papers VALUES (?)", (pmid,))
-            conn.commit()
-            
-            # 避免觸發 API 速率限制，稍作停頓
+            # 2. 存入詳細資料 (修改點)
+            # 資料結構：(pmid, title, abstract, summary, processed_date)
+            try:
+                c.execute(
+                    "INSERT INTO papers (pmid, title, abstract, summary, processed_date) VALUES (?, ?, ?, ?, ?)", 
+                    (pmid, title, abstract, summary, today_str)
+                )
+                conn.commit()
+            except sqlite3.OperationalError as e:
+                # 預防性的錯誤捕捉，雖然 init_db 已經處理過遷移
+                print(f"資料庫寫入錯誤: {e}")
+
             time.sleep(1) 
     
     if new_count > 0:
