@@ -5,6 +5,7 @@ import time
 import requests
 from Bio import Entrez
 import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
 
 # --- 設定區 ---
 
@@ -17,7 +18,11 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 KEYWORDS = "Artificial Intelligence AND Epidemics"
 
 # LLM 模型
-MODEL_NAME = 'gemini-3-flash-preview' 
+MODEL_NAME = 'gemini-3-flash-preview'
+
+# --- 安全限制設定 (針對 Free Tier) ---
+API_DELAY_SECONDS = 12  # 每次呼叫 AI 後休息 20 秒 (確保低於 5 RPM)
+MAX_DAILY_PAPERS = 20    # 每次執行最多處理 5 篇 (確保低於 20 RPD)
 
 # --- 初始化 ---
 Entrez.email = NCBI_EMAIL
@@ -26,14 +31,10 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel(MODEL_NAME)
 
 def init_db():
-    """
-    初始化 SQLite 資料庫
-    修改點：增加欄位檢測，若使用舊版 DB 會自動升級 Schema
-    """
+    """初始化 SQLite 資料庫與自動遷移"""
     conn = sqlite3.connect('papers.db')
     c = conn.cursor()
     
-    # 建立表格 (如果完全不存在)
     c.execute('''CREATE TABLE IF NOT EXISTS papers 
                  (pmid TEXT PRIMARY KEY, 
                   title TEXT, 
@@ -41,36 +42,36 @@ def init_db():
                   summary TEXT, 
                   processed_date TEXT)''')
     
-    # --- 自動遷移邏輯 (針對舊版資料庫) ---
-    # 檢查目前有哪些欄位
+    # 自動檢查並新增欄位 (Migration)
     c.execute("PRAGMA table_info(papers)")
     existing_columns = [info[1] for info in c.fetchall()]
-    
-    # 如果缺欄位，就動態補上 (Migration)
     new_columns = {
-        'title': 'TEXT',
-        'abstract': 'TEXT',
-        'summary': 'TEXT',
-        'processed_date': 'TEXT'
+        'title': 'TEXT', 'abstract': 'TEXT', 
+        'summary': 'TEXT', 'processed_date': 'TEXT'
     }
-    
     for col_name, col_type in new_columns.items():
         if col_name not in existing_columns:
-            print(f"資料庫升級：新增欄位 {col_name}")
-            c.execute(f"ALTER TABLE papers ADD COLUMN {col_name} {col_type}")
+            try:
+                c.execute(f"ALTER TABLE papers ADD COLUMN {col_name} {col_type}")
+            except sqlite3.OperationalError:
+                pass # 忽略重複欄位錯誤
             
     conn.commit()
     return conn
 
 def search_pubmed(keywords):
-    """搜尋過去 1 天內的論文 (限制 10 篇最新)"""
+    """
+    搜尋過去 1 天內的論文
+    注意：這裡我們由原本 retmax=10 降為 retmax=8，
+    稍微多抓一點是為了預防有舊論文佔位，但主程式會有 MAX_DAILY_PAPERS 把關。
+    """
     try:
         handle = Entrez.esearch(
             db="pubmed", 
             term=keywords, 
             reldate=1, 
             datetype="pdat", 
-            retmax=10, 
+            retmax=20, 
             sort='date'
         )
         record = Entrez.read(handle)
@@ -83,6 +84,8 @@ def search_pubmed(keywords):
 def fetch_details(pmid):
     """根據 PMID 獲取標題、摘要與 DOI"""
     try:
+        # 添加小延遲以免 NCBI API 也過載 (雖然它限制較寬鬆)
+        time.sleep(1) 
         handle = Entrez.efetch(db="pubmed", id=pmid, retmode="xml")
         records = Entrez.read(handle)
         handle.close()
@@ -117,36 +120,39 @@ def summarize_ai(title, abstract):
         f"標題：{title}\n"
         f"原始摘要：{abstract}"
     )
-    try:
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"摘要生成失敗: {e}"
+    # 直接回傳結果，錯誤處理交給主迴圈
+    response = model.generate_content(prompt)
+    return response.text
 
 def send_chat_message(text):
-    if not WEBHOOK_URL:
-        return
-
+    if not WEBHOOK_URL: return
     headers = {'Content-Type': 'application/json; charset=UTF-8'}
-    data = {"text": text}
-    
     try:
-        requests.post(WEBHOOK_URL, json=data, headers=headers)
+        requests.post(WEBHOOK_URL, json={"text": text}, headers=headers)
     except Exception as e:
         print(f"Webhook 連線錯誤: {e}")
 
 def main():
-    print(f"開始執行 - 模型: {MODEL_NAME} (詳細存檔版)")
+    print(f"開始執行 - 模型: {MODEL_NAME}")
+    print(f"限制模式: 每次最多 {MAX_DAILY_PAPERS} 篇，間隔 {API_DELAY_SECONDS} 秒")
+    
     conn = init_db()
     c = conn.cursor()
     
     pmids = search_pubmed(KEYWORDS)
-    print(f"找到 {len(pmids)} 篇相關論文")
+    print(f"PubMed 找到 {len(pmids)} 篇候選論文")
     
     new_count = 0
-    today_str = datetime.date.today().isoformat() # 格式：YYYY-MM-DD
+    today_str = datetime.date.today().isoformat()
     
     for pmid in pmids:
+        # 1. 檢查額度限制
+        if new_count >= MAX_DAILY_PAPERS:
+            print(f"⚠️ 已達到單次執行上限 ({MAX_DAILY_PAPERS} 篇)，停止處理以節省 API 額度。")
+            send_chat_message(f"⚠️ 今日論文較多，為節省 API 額度，僅推送前 {MAX_DAILY_PAPERS} 篇。")
+            break
+
+        # 2. 檢查資料庫去重
         c.execute("SELECT pmid FROM papers WHERE pmid=?", (pmid,))
         if c.fetchone():
             continue 
@@ -155,37 +161,46 @@ def main():
         title, abstract, doi = fetch_details(pmid)
         
         if title and abstract:
-            summary = summarize_ai(title, abstract)
-            link = f"https://doi.org/{doi}" if doi else f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
-            
-            # 1. 發送通知
-            message = (
-                f"📄 *{title}*\n"
-                f"{'-'*20}\n"
-                f"{summary}\n\n"
-                f"🔗 <{link}|點擊閱讀原文>" 
-            )
-            send_chat_message(message)
-            new_count += 1
-            
-            # 2. 存入詳細資料 (修改點)
-            # 資料結構：(pmid, title, abstract, summary, processed_date)
             try:
+                # 3. 呼叫 AI (包含錯誤處理)
+                summary = summarize_ai(title, abstract)
+                
+                # 成功後才往下執行
+                link = f"https://doi.org/{doi}" if doi else f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+                message = (
+                    f"📄 *{title}*\n"
+                    f"{'-'*20}\n"
+                    f"{summary}\n\n"
+                    f"🔗 <{link}|點擊閱讀原文>" 
+                )
+                send_chat_message(message)
+                
+                # 4. 存檔
                 c.execute(
                     "INSERT INTO papers (pmid, title, abstract, summary, processed_date) VALUES (?, ?, ?, ?, ?)", 
                     (pmid, title, abstract, summary, today_str)
                 )
                 conn.commit()
-            except sqlite3.OperationalError as e:
-                # 預防性的錯誤捕捉，雖然 init_db 已經處理過遷移
-                print(f"資料庫寫入錯誤: {e}")
+                new_count += 1
+                
+                # 5. 【關鍵】強制冷卻時間
+                print(f"✅ 處理成功，休息 {API_DELAY_SECONDS} 秒...")
+                time.sleep(API_DELAY_SECONDS)
 
-            time.sleep(1) 
+            except google_exceptions.ResourceExhausted:
+                # 這是專門捕捉 429 Quota Exceeded 的錯誤
+                print("❌ API 額度已用盡 (429 Resource Exhausted)。停止今日任務。")
+                send_chat_message("❌ 今日 AI 額度已用盡，停止後續摘要任務。")
+                break
+            except Exception as e:
+                print(f"⚠️ 處理過程發生未預期錯誤: {e}")
+                # 其他錯誤可能不需中斷，繼續下一篇，但稍微休息一下
+                time.sleep(5)
     
     if new_count > 0:
-        send_chat_message(f"✅ 今日更新完畢，共推送 {new_count} 篇新論文。")
+        print(f"今日任務結束，共推送 {new_count} 篇。")
     else:
-        print("今日無新論文，未發送訊息。")
+        print("今日無新論文或未執行推送。")
     
     conn.close()
 
