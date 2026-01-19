@@ -198,9 +198,9 @@ def main():
                 time.sleep(5)
     
     if new_count > 0:
-        print(f"今日任務結束，共推送 {new_count} 篇。")
+        send_chat_message(f"✅ 今日更新完畢，共推送 {new_count} 篇新論文。")
     else:
-        print("今日無新論文或未執行推送。")
+        send_chat_message("今日無新增論文。")
     
     conn.close()
 
