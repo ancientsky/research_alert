@@ -17,7 +17,7 @@ NCBI_API_KEY = os.getenv('NCBI_API_KEY')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 # 搜尋關鍵字
-KEYWORDS = "Artificial Intelligence AND Epidemics"
+KEYWORDS = "Artificial Intelligence"
 
 # LLM 模型名稱 (新版 SDK 通用)
 MODEL_NAME = 'gemini-3-flash-preview'
