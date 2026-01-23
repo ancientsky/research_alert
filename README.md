@@ -160,6 +160,7 @@ python pubmed_scanner.py
 * **API 額度**：由於使用 Gemini 免費版，程式預設每天最多處理 **20 篇** 新論文，且每篇之間會強制休息 12 秒，以避免觸發 "429 Quota Exceeded" 錯誤。
 * **資料庫更新**：GitHub Actions 執行完畢後會自動將更新後的 `papers.db` 推送回倉庫，請確保 Actions 有寫入權限（已在 yml 中設定）。
 
+---
 
 ## ⏱️ 進階設定：調整執行時間 (YAML 詳解)
 
@@ -221,6 +222,7 @@ permissions:
 
 如果你在 Python 程式碼中新增了其他的 API Key 需求（例如增加了 LINE Message API 通知），記得也要在這裡補上對應的設定，否則程式會讀不到金鑰。
 
+---
 
 ## License
 
