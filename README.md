@@ -80,7 +80,7 @@ KEYWORDS = '"Machine Learning"[Title] AND 2024[Date - Publication]'
 
 ### 1. 申請 Google AI Studio API Key (Gemini)
 
-這是免費的，但在 Free Tier 下有速率限制（每分鐘 5 次請求，每天 50 次請求）。本程式已針對此限制優化。
+這是免費的，但在 Free Tier 下有速率限制（每分鐘 5 次請求，每天 20 次請求）。本程式已針對此限制優化。
 
 1. 前往 [Google AI Studio](https://aistudio.google.com/)。
 2. 登入 Google 帳號。
