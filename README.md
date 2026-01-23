@@ -2,7 +2,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python)
 ![GitHub Actions](https://img.shields.io/badge/Automated-GitHub%20Actions-green?logo=github-actions)
-![Gemini AI](https://img.shields.io/badge/AI-Gemini%201.5%20Flash-orange?logo=google)
+![Gemini AI](https://img.shields.io/badge/AI-Gemini%203%20Flash%20Preview-orange?logo=google)
 
 這是一個全自動化的學術追蹤工具，專為忙碌的研究人員與工程師設計。它會每天自動搜尋 PubMed 上最新的醫學論文，利用 Google Gemini AI 將艱澀的摘要轉化為易懂的中文科普短文，並透過 Webhook 推送到您的 Google Chat 群組。
 
