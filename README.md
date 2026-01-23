@@ -219,7 +219,7 @@ permissions:
 
 ```
 
-如果你在 Python 程式碼中新增了其他的 API Key 需求（例如增加了 Slack 通知），記得也要在這裡補上對應的設定，否則程式會讀不到金鑰。
+如果你在 Python 程式碼中新增了其他的 API Key 需求（例如增加了 LINE Message API 通知），記得也要在這裡補上對應的設定，否則程式會讀不到金鑰。
 
 
 ## License
