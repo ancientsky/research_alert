@@ -109,6 +109,8 @@ def fetch_details(pmid):
         print(f"獲取論文詳情失敗 (PMID: {pmid}): {e}")
         return None, None, None
 
+
+####old summarize_ai
 def summarize_ai(title, abstract):
     """使用新版 Google Gen AI SDK 進行科普摘要"""
     prompt = (
@@ -119,6 +121,29 @@ def summarize_ai(title, abstract):
         f"標題：{title}\n"
         f"原始摘要：{abstract}"
     )
+    
+    # 新版呼叫方式
+    response = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=prompt
+    )
+    return response.text
+####end_old summarize_ai
+
+def summarize_ai(title, abstract):
+    """使用新版 Google Gen AI SDK 進行科普摘要"""
+    
+    # 使用多行 f-string 帶入優化後的 prompt
+    prompt = f"""[角色任務] 擔任頂尖科技與醫學科普作家，專為AI推動辦公室團隊解析前沿論文。
+
+[背景資訊] 團隊同仁需要快速掌握 Pubmed 上最新 AI 應用的期刊發展，以便在日常通訊軟體中迅速吸收新知，並評估技術落地的潛在價值。
+
+[具體指令] 閱讀提供的論文標題與原始摘要，將核心資訊提煉為 150 至 200 字的繁體中文重點摘要。請依序產出三個區塊：1. 💡 痛點與背景、2. 🔍 核心AI發現、3. 🚀 應用與意義。
+
+標題：{title}
+原始摘要：{abstract}
+
+[約束條件] 全面使用精簡的條列式或短分段排版，段落間保留空白行。每段開頭結合適當的 Emoji 提升視覺引導與手機閱讀體驗。語氣保持專業、易懂且充滿活力，字數嚴格控制在 150 至 200 字之間。"""
     
     # 新版呼叫方式
     response = client.models.generate_content(
