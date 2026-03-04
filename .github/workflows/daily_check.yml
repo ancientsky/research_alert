@@ -2,7 +2,7 @@ name: Daily PubMed Scanner
 
 on:
   schedule:
-    - cron: '13 0 * * *' # 每天 UTC 00:13 執行
+    - cron: '0 0 * * *' # 每天 UTC 00:00 執行
   workflow_dispatch:
 
 permissions:
