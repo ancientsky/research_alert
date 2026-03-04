@@ -201,6 +201,8 @@ def main():
             try:
                 # 3. 呼叫 AI (新版錯誤處理)
                 summary = summarize_ai(title, abstract)
+                # 👇 新增這行：將標準 Markdown 的雙星號替換為 Google Chat 的單星號
+                summary = summary.replace('**', '*')
                 
                 link = f"https://doi.org/{doi}" if doi else f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
                 message = (
