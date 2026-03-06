@@ -25,8 +25,8 @@ KEYWORDS = '("artificial intelligence"[Title/Abstract] OR "LLM"[Title/Abstract] 
 MODEL_NAME = 'gemini-3.1-flash-lite-preview'
 
 # --- 安全限制設定 (針對 Free Tier) ---
-API_DELAY_SECONDS = 10  # 每次呼叫 AI 後休息 10 秒 (確保低於 15 RPM)
-MAX_DAILY_PAPERS = 28    # 每次執行最多處理 20 篇 (確保低於 20 RPD)
+API_DELAY_SECONDS = 6  # 每次呼叫 AI 後休息 6 秒 (確保低於 15 RPM)
+MAX_DAILY_PAPERS = 40    # 每次執行最多處理 40 篇 (確保低於 40 RPD)
 
 # --- 初始化 ---
 Entrez.email = NCBI_EMAIL
@@ -72,7 +72,7 @@ def search_pubmed(keywords):
             term=keywords, 
             reldate=1, 
             datetype="pdat", 
-            retmax=28, 
+            retmax=40, 
             sort='date'
         )
         record = Entrez.read(handle)
