@@ -4,38 +4,30 @@ import datetime
 import time
 import requests
 from Bio import Entrez
-
 # --- 新版 SDK Import ---
 from google import genai
 from google.genai import errors
 from google.genai import types
 # --- 設定區 ---
-
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 NCBI_EMAIL = os.getenv('NCBI_EMAIL')
 NCBI_API_KEY = os.getenv('NCBI_API_KEY')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-
 # 搜尋關鍵字
 #KEYWORDS = "Artificial Intelligence"
 KEYWORDS = '("artificial intelligence"[Title/Abstract] OR "LLM"[Title/Abstract] OR "large language model"[Title/Abstract]) AND hasabstract[text]'
-
 # LLM 模型名稱 (新版 SDK 通用)
 #MODEL_NAME = 'gemini-3-flash-preview'
 #MODEL_NAME = 'gemini-3.1-flash-lite-preview'
 MODEL_NAME = 'gemma-4-31b-it'
-
 # --- 安全限制設定 (針對 Free Tier) ---
 API_DELAY_SECONDS = 6  # 每次呼叫 AI 後休息 6 秒 (確保低於 15 RPM)
 MAX_DAILY_PAPERS = 40    # 每次執行最多處理 40 篇 (確保低於 40 RPD)
-
 # --- 初始化 ---
 Entrez.email = NCBI_EMAIL
 Entrez.api_key = NCBI_API_KEY
-
 # 新版 Client 初始化
 client = genai.Client(api_key=GEMINI_API_KEY)
-
 def init_db():
     """初始化 SQLite 資料庫與自動遷移"""
     conn = sqlite3.connect('papers.db')
@@ -64,7 +56,6 @@ def init_db():
             
     conn.commit()
     return conn
-
 def search_pubmed(keywords):
     """搜尋過去 1 天內的論文 (限制數量)"""
     try:
@@ -82,7 +73,6 @@ def search_pubmed(keywords):
     except Exception as e:
         print(f"PubMed 搜尋失敗: {e}")
         return []
-
 def fetch_details(pmid):
     """根據 PMID 獲取標題、摘要與 DOI"""
     try:
@@ -93,7 +83,6 @@ def fetch_details(pmid):
         
         if not records['PubmedArticle']:
             return None, None, None
-
         article = records['PubmedArticle'][0]['MedlineCitation']['Article']
         title = article['ArticleTitle']
         
@@ -110,8 +99,6 @@ def fetch_details(pmid):
     except Exception as e:
         print(f"獲取論文詳情失敗 (PMID: {pmid}): {e}")
         return None, None, None
-
-
 ####old summarize_ai
 # def summarize_ai(title, abstract):
 #     """使用新版 Google Gen AI SDK 進行科普摘要"""
@@ -131,19 +118,14 @@ def fetch_details(pmid):
 #     )
 #     return response.text
 ####end_old summarize_ai
-
 def summarize_ai(title, abstract):
     """使用新版 Google Gen AI SDK 進行科普摘要"""
     
     prompt = f"""[角色任務] 擔任頂尖科技與醫學科普作家，專為AI推動辦公室團隊解析前沿論文。
-
 [背景資訊] 團隊同仁需要快速掌握 Pubmed 上最新 AI 應用的期刊發展，以便在日常通訊軟體中迅速吸收新知，並評估技術落地的潛在價值。
-
 [具體指令] 閱讀提供的論文標題與原始摘要，將核心資訊提煉為 150 至 200 字的繁體中文重點摘要。請依序產出三個區塊：1. 💡 痛點與背景、2. 🔍 核心AI發現、3. 🚀 應用與意義。
-
 標題：{title}
 原始摘要：{abstract}
-
 [約束條件] 全面使用精簡的條列式或短分段排版，段落間保留空白行。每段開頭結合適當的 Emoji 提升視覺引導與手機閱讀體驗。語氣保持專業、易懂且充滿活力，字數嚴格控制在 150 至 200 字之間。"""
     
     # 建立生成設定，啟用 MINIMAL 思考層級
@@ -160,10 +142,6 @@ def summarize_ai(title, abstract):
         config=generate_content_config
     )
     return response.text
-
-
-
-
 def send_chat_message(text):
     if not WEBHOOK_URL: return
     headers = {'Content-Type': 'application/json; charset=UTF-8'}
@@ -171,7 +149,6 @@ def send_chat_message(text):
         requests.post(WEBHOOK_URL, json={"text": text}, headers=headers)
     except Exception as e:
         print(f"Webhook 連線錯誤: {e}")
-
 def main():
     print(f"開始執行 - SDK: google-genai - 模型: {MODEL_NAME}")
     print(f"限制模式: 每次最多 {MAX_DAILY_PAPERS} 篇，間隔 {API_DELAY_SECONDS} 秒")
@@ -188,9 +165,8 @@ def main():
     for pmid in pmids:
         if new_count >= MAX_DAILY_PAPERS:
             print(f"⚠️ 已達到單次執行上限 ({MAX_DAILY_PAPERS} 篇)。")
-            send_chat_message(f"⚠️ 今日論文較多，僅推送前 {MAX_DAILY_PAPERS} 篇以節省額度。")
+            send_chat_message(f"⚠️ 今日({today_str})論文較多，僅推送前 {MAX_DAILY_PAPERS} 篇以節省額度。")
             break
-
         c.execute("SELECT pmid FROM papers WHERE pmid=?", (pmid,))
         if c.fetchone():
             continue 
@@ -223,12 +199,11 @@ def main():
                 
                 print(f"✅ 處理成功，休息 {API_DELAY_SECONDS} 秒...")
                 time.sleep(API_DELAY_SECONDS)
-
             except errors.ClientError as e:
                 # 新版 SDK 的錯誤處理，通常 429 會包含在 ClientError 中
                 if e.code == 429:
                     print("❌ API 額度已用盡 (429 Resource Exhausted)。")
-                    send_chat_message("❌ 今日 AI 額度已用盡，停止後續任務。")
+                    send_chat_message(f"❌ 今日({today_str}) AI 額度已用盡，停止後續任務。")
                     break
                 else:
                     print(f"⚠️ API ClientError: {e}")
@@ -238,11 +213,10 @@ def main():
                 time.sleep(5)
     
     if new_count > 0:
-        send_chat_message(f"✅ 今日更新完畢，共推送 {new_count} 篇新論文。")
+        send_chat_message(f"✅ 今日({today_str})更新完畢，共推送 {new_count} 篇新論文。")
     else:
-        send_chat_message("今日無新增論文。")
+        send_chat_message(f"今日({today_str})無新增論文。")
     
     conn.close()
-
 if __name__ == "__main__":
     main()
