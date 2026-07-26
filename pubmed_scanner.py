@@ -20,7 +20,8 @@ KEYWORDS = '("artificial intelligence"[Title/Abstract] OR "LLM"[Title/Abstract] 
 #MODEL_NAME = 'gemini-3-flash-preview'
 #MODEL_NAME = 'gemini-3.1-flash-lite-preview'
 #MODEL_NAME = 'gemma-4-31b-it'
-MODEL_NAME = 'gemini-3.1-flash-lite'
+#MODEL_NAME = 'gemini-3.1-flash-lite'
+MODEL_NAME = 'gemini-3.5-flash-lite'
 
 # --- 安全限制設定 (針對 Free Tier) ---
 API_DELAY_SECONDS = 6  # 每次呼叫 AI 後休息 6 秒 (確保低於 15 RPM)
