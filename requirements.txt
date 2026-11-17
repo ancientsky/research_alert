@@ -1,4 +1,4 @@
-biopython>=1.83
-google-genai
-requests
-certifi>=2026.10.19
+biopython>=1.88
+google-genai>=3.4.0
+requests>=2.34.2
+certifi>=2026.10.23
