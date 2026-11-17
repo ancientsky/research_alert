@@ -144,12 +144,16 @@ def summarize_ai(title, abstract):
         contents=prompt,
         config=generate_content_config
     )
+    if not response.text:
+        raise ValueError("模型未回傳摘要內容 (可能被安全機制阻擋或回應為空)")
     return response.text
 def send_chat_message(text):
     if not WEBHOOK_URL: return
     headers = {'Content-Type': 'application/json; charset=UTF-8'}
     try:
-        requests.post(WEBHOOK_URL, json={"text": text}, headers=headers)
+        resp = requests.post(WEBHOOK_URL, json={"text": text}, headers=headers, timeout=30)
+        if not resp.ok:
+            print(f"Webhook 回應錯誤: HTTP {resp.status_code} {resp.text[:200]}")
     except Exception as e:
         print(f"Webhook 連線錯誤: {e}")
 def main():
